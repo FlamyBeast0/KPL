@@ -7,6 +7,7 @@ import random
 import firebase_admin
 from firebase_admin import credentials, firestore
 import os # Import os module to handle environment variables
+import json # Import json module to parse the credentials string
 
 app = Flask(__name__)
 # Enable CORS for your app, allowing all origins for initial deployment.
@@ -14,16 +15,41 @@ app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}}) #
 
 # --- Firebase Initialization ---
-# The 'firebase_credentials.json' file must be in the same directory as app.py
-try:
-    cred = credentials.Certificate("firebase_credentials.json")
-    firebase_admin.initialize_app(cred)
-    db = firestore.client()
-    print("Firebase initialized successfully!")
-except Exception as e:
-    print(f"Error initializing Firebase: {e}")
-    print("Please ensure 'firebase_credentials.json' is in the same directory and is valid.")
-    # In a production app, you might want to exit or log this more robustly.
+# The 'firebase_credentials.json' file is NOT uploaded to GitHub for security.
+# Instead, its content is provided via the FIREBASE_CREDENTIALS environment variable on Render.
+
+# Attempt to get the JSON string from the environment variable
+firebase_credentials_json = os.environ.get('FIREBASE_CREDENTIALS')
+
+if firebase_credentials_json:
+    try:
+        # Parse the JSON string into a Python dictionary
+        cred_dict = json.loads(firebase_credentials_json)
+        # Initialize Firebase Admin SDK with the dictionary
+        cred = credentials.Certificate(cred_dict)
+        firebase_admin.initialize_app(cred) # Use firebase_admin.initialize_app
+        db = firestore.client()
+        print("Firebase initialized successfully from environment variable.")
+    except json.JSONDecodeError as e:
+        print(f"Error parsing FIREBASE_CREDENTIALS JSON: {e}")
+        # In a real application, you might want to raise an exception or exit here
+    except Exception as e:
+        print(f"Error initializing Firebase from environment variable: {e}")
+        # In a real application, you might want to raise an exception or exit here
+else:
+    # Fallback for local testing if the environment variable is not set (e.g., when running on your local machine)
+    # This part will only run when you run locally without the env var
+    # and if you still have firebase_credentials.json file locally.
+    print("FIREBASE_CREDENTIALS environment variable not found. Attempting local file for testing purposes...")
+    try:
+        cred = credentials.Certificate("firebase_credentials.json")
+        firebase_admin.initialize_app(cred) # Use firebase_admin.initialize_app
+        db = firestore.client()
+        print("Firebase initialized successfully from local file (for local testing).")
+    except Exception as e:
+        print(f"Error: Firebase initialization failed. No environment variable and no local file found. {e}")
+        # If your app can't function without Firebase, you might want to exit or raise an exception here.
+
 
 # This is the 'listening' part. It listens for messages sent to '/receive-order'
 @app.route('/receive-order', methods=['POST'])
@@ -139,4 +165,3 @@ def generate_health_tips():
 # IMPORTANT: This block should be commented out or removed for Cloud Run/Render deployment.
 # if __name__ == '__main__':
 #     app.run(debug=True, port=5000)
-
